@@ -70,9 +70,28 @@ function lenOfDescription(itemList) {
   let points = 0;
 
   for (let step = 0; step < len; step++) {
-    let trimDescr= (itemList[step].shortDescription.trim()).length;
-    if (trimDescr % 3 == 0) {
-      points += Math.ceil(itemList[step].price * 0.20);
+    // remove trailing or leading whitespaces from short description
+    let trimDescr = itemList[step].shortDescription.trim();
+
+    let descPattern = /^[\w\s\-]+$/;
+    if (!descPattern.test(trimDescr)) {
+      return -1;
+    }
+
+    // get trimmed description length
+    let trimDescrLen = trimDescr.length;
+
+    let itemPrice = itemList[step].price;
+
+    let itemPricePattern = /^\d+\.\d{2}$/;
+    if (!itemPricePattern.test(itemPrice)) {
+      return -1;
+    }
+
+    // if descr length divisible by 3, 
+    // get the rounded up value of product of each price with 0.20
+    if (trimDescrLen % 3 == 0) {
+      points += Math.ceil(itemPrice * 0.20);
     }
   } 
   return points;
@@ -95,7 +114,7 @@ function time(string){
   } 
   if (hour == 14) {
     if (minute > 0) {
-      console.log("It's eyond 2:00");
+      console.log("It's beyond 2:00, but def before 4pm");
       return 10;
     }
   }
@@ -112,9 +131,11 @@ function isDayOdd(string) {
   let splitString = string.split("-");
   // console.log("This is how the string splits", splitString);
   if (splitString[2] % 2 != 0) {
+    console.log("Odd day");
     return 6;
   }
 
+  console.log("Even day");
   return 0;
 }
 
@@ -123,11 +144,20 @@ function isDayOdd(string) {
   Function to calculate the sum of all points accumulated 
 */
 function calcPoints(receipt) {
-  console.log("calcPoints function was called!"); // entry point in function
+  console.log("the calcPoints function was called!"); // entry point in function
 
+  const retailerPattern = /^[\w\s\-&]+$/;
+  if (!retailerPattern.test(receipt.retailer)) {
+    return -1;
+  }
   const retailerNamePoints = retailerName(receipt.retailer);
   console.log("Retailer name points:", retailerNamePoints);
 
+  const totalAmountPattern = /^\d+\.\d{2}$/;
+  if (!totalAmountPattern.test(receipt.total)) {
+    console.log(receipt.total);
+    return -1;
+  }
   const totalAmountPoints = totalAmount(receipt.total);
   console.log("Total amount points: ", totalAmountPoints);  
 
@@ -135,6 +165,9 @@ function calcPoints(receipt) {
   console.log("Total pairs of items: ", itemPairPoints);
 
   const descLengthPoints = lenOfDescription(receipt.items);
+  if (descLengthPoints == -1){
+    return -1;
+  }
   console.log("Description Length points: ", descLengthPoints);
 
   const timePoints = time(receipt.purchaseTime);
@@ -143,11 +176,13 @@ function calcPoints(receipt) {
   const oddDayPoints = isDayOdd(receipt.purchaseDate);
   console.log("The points from an odd day are: ", oddDayPoints)
 
+  console.log("-----End of Receipt Calculation-----");
+
   return retailerNamePoints + totalAmountPoints + itemPairPoints + descLengthPoints + timePoints + oddDayPoints; 
 }
 
 /*
-express.son() mounts the specified middleware function(s) at the path which is being specified
+express.json() mounts the specified middleware function(s) at the path which is being specified
 */
 app.use(express.json());
 // tester functions to ensure smooth basic setup of express + docker container
@@ -160,26 +195,39 @@ app.listen(8080, () => {
 });
 
 app.post("/receipts/process", (req, res) => {
+  console.log("-------------New receipt coming up..");
   const receipt = req.body;
   const receiptID = generateUniqueId();
   const points = calcPoints(receipt);
+
+  if (points == -1){
+    console.log("Points are negative, inside the POST request.");
+    return res.status(400).json({error: "The receipt is invalid."});
+  }
 
   receiptData[receiptID] = {
     receipt,
     points
   };
 
-  res.json({"id": receiptID});
+  res.status(200).json({"id": receiptID});
 });
 
 app.get("/receipts/:id/points", (req, res) => {
   const receiptID = req.params.id;
 
+  const idPattern  = /^\S+$/;
+  if (!idPattern.test(receiptID)){
+    console.log("ReceiptID is not formatted correctly");
+    return res.status(400).json({ error: "The receipt is invalid." });    
+  }
   if (!receiptData[receiptID]) {
+    console.log("ReceiptID does not exist");
     return res.status(404).json({ error: "No receipt found for that ID." });
   }
 
   const receiptPoints = receiptData[receiptID].points;
-  console.log("The points attached to this receiptID are: ", receiptPoints);
-  res.json({"points": receiptPoints})
+  console.log("The points attached to the above receiptID are: ", receiptPoints);
+  console.log("------------------------------")
+  res.status(200).json({"points": receiptPoints})
 });
